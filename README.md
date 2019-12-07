@@ -16,13 +16,15 @@ If our software or paper helps your research or project, please cite us using:
       year={2017}
     }
     
-Joe add inference time constrain mechanism from this paper **[Accuracy vs. Efficiency: Achieving Both through FPGA-Implementation Aware Neural Architecture Search](https://arxiv.org/pdf/1901.11211.pdf)** .
+Yi Chuan ,Joe add inference time constrain mechanism from this paper **[Accuracy vs. Efficiency: Achieving Both through FPGA-Implementation Aware Neural Architecture Search](https://arxiv.org/pdf/1901.11211.pdf)** .
+It works on OpenVINO Starter Kit and DE5a-NET-DDR4
 
-If my software helps your research or project, please cite us using:
+If our software helps your research or project, please cite us using:
 
-    @article{joe2019implement,
-      implementer={Joe},
-      year={2019.09.23}
+    @article{2019implement,
+      titel={Fast Neural Architecture Search for Edge AI with OpenVINO}
+      autour={Yi Chuan Liang, Ying-Chaio Liao, Chen-Ching Ling},
+      year={2019.12.07}
     }
 
 # Installation
