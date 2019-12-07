@@ -111,4 +111,4 @@ Bowen Baker\*, Otkrist Gupta\*, Nikhil Naik, Ramesh Raskar
 *Under Submission*
 
 We will be releasing code for this before the end of the summer, but the method is extremely simple so you shouldn't have any trouble implementing it yourself if you need to use it before our release.
-# practice-git
+
