@@ -58,7 +58,7 @@ class QClient(protocol.Protocol):
             print 'Redundancy in connect name'
 
         if out['type'] == 'new_net':
-            print 'Ready to train ' + out['net_string']
+            print '===== Ready to train ' + out['net_string'] + ' ====='
 
             if self.factory.debug:
                 time.sleep(5)
@@ -68,22 +68,30 @@ class QClient(protocol.Protocol):
                                                                               100,
                                                                               85.5,
                                                                               10000,
+                                                                              16.534,
                                                                               float(out['epsilon']),
-                 
                                                                               int(out['iteration_number'])))
             else:
                 model_dir = get_model_dir(self.factory.hyper_parameters.CHECKPOINT_DIR, out['net_string'])
-
+                print 'model_dir : %s' % model_dir
                 trainer = ModelExec(model_dir, self.factory.hyper_parameters, self.factory.state_space_parameters)
 
                 train_out = trainer.run_one_model(out['net_string'], gpu_to_use=self.factory.gpu_to_use)
-                print 'OUT', train_out
+                print 'OUT : ', train_out
 
                 # If OUT OF MEMORY or FAIL, delete files
                 if train_out['status'] in ['OUT_OF_MEMORY', 'FAIL']:
                     rm_model_dir(self.factory.hyper_parameters.CHECKPOINT_DIR, out['net_string'])
 
-                if train_out['status'] == 'OUT_OF_MEMORY':
+                if train_out['status'] == 'INFERENCE_TIME_CONSTRAIN':
+                    self.transport.write(q_protocol.construct_inference_time_constrain_message(self.factory.clientname,
+                                                                                               out['net_string'],
+                                                                                               train_out['latency'],
+                                                                                               float(out['epsilon']),
+                                                                                               int(out['iteration_number'])))
+                    remove_command = 'rm -rf %s' % model_dir
+                    os.system(remove_command)
+                elif train_out['status'] == 'OUT_OF_MEMORY':
                     self.transport.write(q_protocol.construct_net_too_large_message(self.factory.clientname))
                 else:
 
@@ -104,8 +112,11 @@ class QClient(protocol.Protocol):
                                                                                   iter_best,
                                                                                   acc_last,
                                                                                   iter_last,
+                                                                                  train_out['latency'],
                                                                                   float(out['epsilon']),
                                                                                   int(out['iteration_number'])))
+                    remove_command = 'rm -rf %s' % model_dir
+                    os.system(remove_command)
 
 
     

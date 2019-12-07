@@ -3,6 +3,9 @@ image_size = 32                                                                 
 
 layer_limit = 18                                                                            # Max number of layers
 
+#Inference time constrain in ms (milliseconds)
+inference_constrain = 15
+
 # Transition Options
 possible_conv_depths = [64, 128, 256, 512]                                                  # Choices for number of filters in a convolutional layer
 possible_conv_sizes = [1,3,5]                                                               # Choices for kernel size (square)

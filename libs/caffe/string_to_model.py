@@ -61,12 +61,37 @@ class Parser:
                 print exc 
                 raise
 
+    def create_caffe_spec_for_model_optimizer(self, model_dir, caffe_prototxt):
+        caffe_prototxt_mo = os.path.join(model_dir, "train_net_mo.prototxt")
+        self.create_dir(caffe_prototxt_mo)
+        with open(caffe_prototxt, "r") as f:
+            lines = f.readlines()
+        with open(caffe_prototxt_mo, "w") as f:
+            f.writelines('layer {\n')
+            f.writelines('  name: "data"\n')
+            f.writelines('  type: "Input"\n')
+            f.writelines('  top: "data"\n')
+            f.writelines('  input_param { shape: { dim: 1 dim: 3 dim: 32 dim: 32 } }\n')
+            f.writelines('}\n')
+            line_count = 0
+            for line in lines:
+                if (line_count > 30) and (line_count < (len(lines)-14)):
+                    f.write(line)
+                line_count+=1
+            f.writelines('layer {\n')
+            f.writelines('  name: "Softmax1"\n')
+            f.writelines('  type: "Softmax"\n')
+            f.writelines('  bottom: "InnerProduct1"\n')
+            f.writelines('  top: "Softmax1"\n')
+            f.writelines('}\n')
+
     # Creates caffe prototxt specification.
     def create_caffe_spec(self, net_string, caffe_prototxt):
         self.create_dir(caffe_prototxt)
         cc = self.convert(net_string)
         with open(caffe_prototxt, "w") as f:
             f.write(str(cc))
+        # self.create_caffe_spec_for_model_optimizer(caffe_prototxt)
 
     # Creates the top most layer (data layer) for caffe netspec.
     def create_top_layer(self, phase=caffe.TRAIN, input_file="", train=True):

@@ -140,6 +140,7 @@ class QLearner:
                                                          'accuracy_best_test',
                                                          'accuracy_last_test',
                                                          'ix_q_value_update',
+                                                         'latency',
                                                          'epsilon'])):
         self.state_list = []
 
@@ -178,6 +179,7 @@ class QLearner:
             iter_last_val = self.replay_dictionary[self.replay_dictionary['net']==net_string]['iter_last_val'].values[0]
             acc_best_test = self.replay_dictionary[self.replay_dictionary['net']==net_string]['accuracy_best_test'].values[0]
             acc_last_test = self.replay_dictionary[self.replay_dictionary['net']==net_string]['accuracy_last_test'].values[0]
+            latency = self.replay_dictionary[self.replay_dictionary['net']==net_string]['latency'].values[0]
             machine_run_on = self.replay_dictionary[self.replay_dictionary['net']==net_string]['machine_run_on'].values[0]
         else:
             acc_best_val = -1.0
@@ -186,9 +188,10 @@ class QLearner:
             iter_last_val = -1.0
             acc_best_test = -1.0
             acc_last_test = -1.0
+            latency = -1.0
             machine_run_on = -1.0
 
-        return (net_string, acc_best_val, iter_best_val, acc_last_val, iter_last_val, acc_best_test, acc_last_test, machine_run_on)
+        return (net_string, acc_best_val, iter_best_val, acc_last_val, iter_last_val, acc_best_test, acc_last_test, latency, machine_run_on)
 
     def save_q(self, q_path):
         self.qstore.save_to_csv(os.path.join(q_path,'q_values.csv'))
@@ -236,24 +239,45 @@ class QLearner:
 
         self.state_list.append(bucketed_state)
 
-    def sample_replay_for_update(self):
+    def sample_replay_for_update_in_latency(self):
+        # Experience replay to update Q-Values
+        for i in range(self.state_space_parameters.replay_number):
+            net = np.random.choice(self.replay_dictionary['net'])
+            latency = self.replay_dictionary[self.replay_dictionary['net'] == net]['latency'].values[0]
+
+            state_list = self.stringutils.convert_model_string_to_states(cnn.parse('net', net))
+            state_list = self.stringutils.remove_drop_out_states(state_list)
+            # Convert States so they are bucketed
+            state_list = [self.enum.bucket_state(state) for state in state_list]
+
+            self.update_q_value_sequence(state_list, self.accuracy_to_reward_in_latency(latency))
+
+    def accuracy_to_reward_in_latency(self, lat):
+        '''How to define reward from accuracy'''
+        require_lat = self.state_space_parameters.inference_constrain
+        reward = ((require_lat-lat)/require_lat)-1
+        return reward
+
+    def sample_replay_for_update(self, baseline):
         # Experience replay to update Q-Values
         for i in range(self.state_space_parameters.replay_number):
             net = np.random.choice(self.replay_dictionary['net'])
             accuracy_best_val = self.replay_dictionary[self.replay_dictionary['net'] == net]['accuracy_best_val'].values[0]
             accuracy_last_val = self.replay_dictionary[self.replay_dictionary['net'] == net]['accuracy_last_val'].values[0]
+            latency = self.replay_dictionary[self.replay_dictionary['net'] == net]['latency'].values[0]
+
             state_list = self.stringutils.convert_model_string_to_states(cnn.parse('net', net))
-
             state_list = self.stringutils.remove_drop_out_states(state_list)
-
             # Convert States so they are bucketed
             state_list = [self.enum.bucket_state(state) for state in state_list]
 
-            self.update_q_value_sequence(state_list, self.accuracy_to_reward(accuracy_best_val))
+            self.update_q_value_sequence(state_list, self.accuracy_to_reward(accuracy_best_val, baseline, latency))
 
-    def accuracy_to_reward(self, acc):
+    def accuracy_to_reward(self, acc, baseline, lat):
         '''How to define reward from accuracy'''
-        return acc
+        require_lat = self.state_space_parameters.inference_constrain
+        reward = (acc-baseline) + lat/require_lat
+        return reward
 
     def update_q_value_sequence(self, states, termination_reward):
         '''Update all Q-Values for a sequence.'''

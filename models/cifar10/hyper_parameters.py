@@ -2,6 +2,11 @@ import state_space_parameters as ssp
 
 MODEL_NAME = 'cifar10'
 
+#Re-Inference Times
+INFERENCE_TIMES = 5
+#Inference time constrain in ms (milliseconds)
+INFERENCE_CONSTRAIN = ssp.inference_constrain
+
 # Number of output neurons
 NUM_CLASSES = 10                                                                    # Number of output neurons
 

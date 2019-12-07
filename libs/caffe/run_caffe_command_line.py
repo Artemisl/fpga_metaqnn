@@ -34,6 +34,23 @@ def parse_line_for_net_output(regex_obj, row, row_dict_list, line, iteration):
         row = None
     return row_dict_list, row
 
+def get_all_inference_time(log_file, inference_times):
+    print "Parsing Inference Time [%s]" % log_file
+    regex_iteration = re.compile('total inference time: ([\.\deE+-]+)')
+    total_inference_time = 0
+    average_inference_time = 0
+    with open(log_file, 'r') as f:
+        for line in f:
+            iteration_match = regex_iteration.search(line)
+            inference_time = -1
+            if iteration_match:
+                inference_time = float(iteration_match.group(1))
+                total_inference_time += inference_time
+                print 'inference_time : %f' % inference_time
+            if inference_time == -1:
+                continue
+    average_inference_time = total_inference_time/inference_times
+    return average_inference_time
 
 # MAIN FUNCTION: parses log file.
 def parse_caffe_log_file(log_file):
@@ -126,6 +143,23 @@ def get_last_test_epoch(log_file):
     last_test_epoch = test_dict_list[-1]
     return last_test_epoch['NumIters'], last_test_epoch
 
+# Run caffe just get weight example
+def run_caffe_once(solver_fname, log_file, caffe_root, num_iter=-1, gpu_to_use=None):
+    cmd_suffix = ''
+    if num_iter > 0:
+        cmd_suffix = ' --iterations %d ' % num_iter
+
+    if gpu_to_use is not None:
+        run_cmd = '%s train --solver %s --gpu %i %s >> %s 2>&1 ' % (
+                os.path.join(caffe_root, 'build/tools/caffe'), solver_fname, gpu_to_use, cmd_suffix, log_file)
+    else:
+        run_cmd = '%s train --solver %s %s >> %s 2>&1 ' % (
+                os.path.join(caffe_root, 'build/tools/caffe'), solver_fname, cmd_suffix, log_file)
+
+    # Run the caffe code.
+    print "1 .Running [%s]" % run_cmd
+    os.system(run_cmd)
+
 # Run caffe command line and return accuracies.
 def run_caffe_return_accuracy(solver_fname, log_file, caffe_root, num_iter=-1, gpu_to_use=None):
     cmd_suffix = ''
@@ -140,7 +174,7 @@ def run_caffe_return_accuracy(solver_fname, log_file, caffe_root, num_iter=-1, g
                 os.path.join(caffe_root, 'build/tools/caffe'), solver_fname, cmd_suffix, log_file)
 
     # Run the caffe code.
-    print "Running [%s]" % run_cmd
+    print "2 .Running [%s]" % run_cmd
     os.system(run_cmd)
 
     # Get the accuracy values.
@@ -160,7 +194,7 @@ def run_caffe_from_snapshot(solver_fname, log_file, snapshot_file, caffe_root, g
                 os.path.join(caffe_root, 'build/tools/caffe'), solver_fname, snapshot_file, log_file)
 
     # Run the caffe code.
-    print "Running [%s]" % run_cmd
+    print "3. Running [%s]" % run_cmd
     os.system(run_cmd)
 
     test_acc_list = get_all_accuracies(log_file)

@@ -13,6 +13,8 @@ import os
 import socket
 import time
 
+accuracy_list = []
+
 class bcolors:
     HEADER = '\033[95m'
     YELLOW = '\033[93m'
@@ -36,16 +38,19 @@ class QServer(protocol.ServerFactory):
         self.new_net_lock = DeferredLock()
         self.clients = {} # name of connection is key, each value is dict with {'connection', 'net', 'iters_sampled'}
 
-        self.replay_columns = ['net',                   #Net String
+        self.replay_columns = ['net',                   # Net String
                                'accuracy_best_val',     
                                'iter_best_val',
                                'accuracy_last_val',
                                'iter_last_val',
                                'accuracy_best_test',
                                'accuracy_last_test',
-                               'ix_q_value_update',     #Iteration for q value update
+                               'ix_q_value_update',     # Iteration for q value update
+                               'latency',               # Inference latency
                                'epsilon',               # For epsilon greedy
                                'time_finished',         # UNIX time
+                               'baseline',
+                               'reward',
                                'machine_run_on']
 
 
@@ -55,12 +60,15 @@ class QServer(protocol.ServerFactory):
         self.replay_dictionary, self.q_training_step = self.load_replay()
 
         self.schedule_or_single = False if epsilon else True
+        print 'epsilon : %r' % epsilon
+        print 'schedule_or_single : %r' % self.schedule_or_single
         if self.schedule_or_single:
             self.epsilon = state_space_parameters.epsilon_schedule[0][0]
             self.number_models = state_space_parameters.epsilon_schedule[0][1]
         else:
             self.epsilon = epsilon
             self.number_models = number_models if number_models else 10000000000
+        print 'number_models : %d' % self.number_models
         self.state_space_parameters = state_space_parameters
         self.hyper_parameters = hyper_parameters
 
@@ -69,7 +77,6 @@ class QServer(protocol.ServerFactory):
         self.list_path = list_path
         self.qlearner = self.load_qlearner()
         self.check_reached_limit()
-
 
     def load_replay(self):
         if os.path.isfile(self.replay_dictionary_path):
@@ -146,6 +153,7 @@ class QServer(protocol.ServerFactory):
              iter_last_val,
              acc_best_test,
              acc_last_test,
+             latency,
              machine_run_on) = self.qlearner.generate_net()
 
             # We have already trained this net
@@ -156,6 +164,7 @@ class QServer(protocol.ServerFactory):
                                              iter_best_val,
                                              acc_last_val,
                                              iter_last_val,
+                                             latency,
                                              self.epsilon,
                                              [self.q_training_step],
                                              machine_run_on)
@@ -183,11 +192,22 @@ class QServer(protocol.ServerFactory):
                                 iter_best_val,
                                 acc_last_val,
                                 iter_last_val,
+                                latency,
                                 epsilon,
                                 iters,
                                 machine_run_on):
 
         try:
+            # Caculate reward and story in cvs file for debugging
+            reward = 0
+            baseline = 0
+            if acc_best_val==-1:
+                reward = self.qlearner.accuracy_to_reward_in_latency(latency)
+            else:
+                accuracy_list.append(acc_best_val)
+                values = np.array(accuracy_list)
+                baseline = pd.ewma(values, span=len(accuracy_list))[-1]
+                reward = self.qlearner.accuracy_to_reward(acc_best_val, baseline, latency)
             # If we sampled the same net many times, we should add them each into the replay database
             for train_iter in iters:
                 self.replay_dictionary = pd.concat([self.replay_dictionary, pd.DataFrame({'net':[net_string],
@@ -198,16 +218,23 @@ class QServer(protocol.ServerFactory):
                                                                                           'accuracy_best_test':[-1.0],
                                                                                           'accuracy_last_test': [-1.0],
                                                                                           'ix_q_value_update': [train_iter],
+                                                                                          'latency': [latency],
                                                                                           'epsilon': [epsilon],
                                                                                           'time_finished': [time.time()],
+                                                                                          'baseline': [baseline],
+                                                                                          'reward': [reward],
                                                                                           'machine_run_on': [machine_run_on]})])
                 self.replay_dictionary.to_csv(self.replay_dictionary_path, index=False, columns=self.replay_columns)
 
             self.qlearner.update_replay_database(self.replay_dictionary)
+            print 'len(iters) : %d' % len(iters)
             for i in range(len(iters)):
-                self.qlearner.sample_replay_for_update()
+                if acc_best_val == -1.0 :
+                    self.qlearner.sample_replay_for_update_in_latency()
+                else :
+                    self.qlearner.sample_replay_for_update(baseline)
             self.qlearner.save_q(self.list_path)
-            print bcolors.YELLOW + 'Incorporated net from %s, acc: %f, net: %s' % (machine_run_on, acc_best_val, net_string) + bcolors.ENDC
+            print bcolors.YELLOW + 'Incorporated net from %s, acc: %f, latency: %f, net: %s' % (machine_run_on, acc_best_val, latency, net_string) + bcolors.ENDC
         except Exception:
             print traceback.print_exc()
 
@@ -235,6 +262,7 @@ class QConnection(protocol.Protocol):
 
     def dataReceived(self, data):
         msg = q_protocol.parse_message(data)
+        print 'dataReceived : %s' % msg
         if msg['type'] == 'login':
 
             # Redundant connection
@@ -250,16 +278,32 @@ class QConnection(protocol.Protocol):
                 
         elif msg['type'] == 'net_trained':
             iters = self.factory.clients[msg['sender']]['iters_sampled']
+            print 'iters : %s' % iters
             self.factory.new_net_lock.run(self.factory.incorporate_trained_net, msg['net_string'],
                                                                                 float(msg['acc_best_val']),
                                                                                 int(msg['iter_best_val']),
                                                                                 float(msg['acc_last_val']),
                                                                                 int(msg['iter_last_val']),
+                                                                                float(msg['latency']),
                                                                                 float(msg['epsilon']),
                                                                                 iters,
                                                                                 msg['sender'])
             self.send_new_net(msg['sender'])
         elif msg['type'] == 'net_too_large':
+            self.send_new_net(msg['sender'])
+
+        elif msg['type'] == 'inference_time_constrain':
+            iters = self.factory.clients[msg['sender']]['iters_sampled']
+            print 'iters : %s' % iters
+            self.factory.new_net_lock.run(self.factory.incorporate_trained_net, msg['net_string'],
+                                                                                float(-1.0),
+                                                                                int(-1),
+                                                                                float(-1.0),
+                                                                                int(-1),
+                                                                                float(msg['latency']),
+                                                                                float(msg['epsilon']),
+                                                                                iters,
+                                                                                msg['sender'])
             self.send_new_net(msg['sender'])
 
 
@@ -268,6 +312,9 @@ def main():
     
     model_pkgpath = os.path.join(os.path.dirname(__file__),'models')
     model_choices = next(os.walk(model_pkgpath))[1]
+
+    print "model_pkgpath : " + '%s' % (model_pkgpath)
+    print "model_choices : " + '%s' % (model_choices)
 
     parser.add_argument('model',
                         help='model package name package should have a model.py,' + 

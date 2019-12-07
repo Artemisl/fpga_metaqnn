@@ -15,6 +15,15 @@ If our software or paper helps your research or project, please cite us using:
       journal={International Conference on Learning Representations},
       year={2017}
     }
+    
+Joe add inference time constrain mechanism from this paper **[Accuracy vs. Efficiency: Achieving Both through FPGA-Implementation Aware Neural Architecture Search](https://arxiv.org/pdf/1901.11211.pdf)** .
+
+If my software helps your research or project, please cite us using:
+
+    @article{joe2019implement,
+      implementer={Joe},
+      year={2019.09.23}
+    }
 
 # Installation
 All code was only tested on ubuntu 16.04, python 2.7, with caffe at commit [d208b71](https://github.com/BVLC/caffe/tree/d208b714abb8425f1b96793e04508ad21724ae3f)
@@ -100,4 +109,4 @@ Bowen Baker\*, Otkrist Gupta\*, Nikhil Naik, Ramesh Raskar
 *Under Submission*
 
 We will be releasing code for this before the end of the summer, but the method is extremely simple so you shouldn't have any trouble implementing it yourself if you need to use it before our release.
-# fpga_metaqnn
+# practice-git

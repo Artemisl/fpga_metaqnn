@@ -5,9 +5,11 @@ import sys
 
 from model_gen import ModelGen
 from run_caffe_command_line import check_out_of_memory
+from run_caffe_command_line import get_all_inference_time
 from run_caffe_command_line import get_all_accuracies
 from run_caffe_command_line import get_last_epoch_snapshot
 from run_caffe_command_line import get_last_test_epoch
+from run_caffe_command_line import run_caffe_once
 from run_caffe_command_line import get_test_accuracies_dict
 from run_caffe_command_line import run_caffe_from_snapshot
 from run_caffe_command_line import run_caffe_return_accuracy
@@ -17,6 +19,8 @@ import caffe
 from caffe import layers as cl
 from caffe import params as P
 from caffe import to_proto
+
+import time
 
 class ModelExec:
     def __init__(self, model_dir, hyper_parameters, state_space_parameters):
@@ -28,20 +32,48 @@ class ModelExec:
     def run_one_model(self, model_descr, gpu_to_use=None):
         # Iterate through all learning rates until we get passed accuracy threshhold
         for learning_rate in self.hp.INITIAL_LEARNING_RATES:
+            ##### Joe add for train one to get weights #####
+            model_dir, solver_path = ModelGen(self.model_dir, self.hp, self.ssp).save_models(
+                model_descr, learning_rate, 1)
+            log_file = self.get_log_fname(model_dir, learning_rate, 1)
+            run_caffe_once(solver_path, log_file, self.hp.CAFFE_ROOT, gpu_to_use=gpu_to_use)
+            
+            average_inference_time = 0
+
+            if check_out_of_memory(log_file):
+                return {'learning_rate': learning_rate,
+                        'status': 'OUT_OF_MEMORY',
+                        'test_accs': {}}
+            else :
+                ModelGen(self.model_dir, self.hp, self.ssp).save_models_for_mo(model_descr)
+                inference_log_path = os.path.join(self.model_dir, "inference_caffemodel_in_fpga.log")
+                average_inference_time = get_all_inference_time(inference_log_path, self.hp.INFERENCE_TIMES)
+                print 'average_inference_time : %f' % average_inference_time
+
+                if average_inference_time > self.hp.INFERENCE_CONSTRAIN:
+                    return {'learning_rate': learning_rate,
+                        'status': 'INFERENCE_TIME_CONSTRAIN',
+                        'latency': average_inference_time}
+            
+            ##### End #####
+
             model_dir, solver_path = ModelGen(self.model_dir, self.hp, self.ssp).save_models(
                 model_descr, learning_rate, self.hp.NUM_ITER_TO_TRY_LR)
 
             # Execute.
-            print "Running [%s]" % solver_path
+            print "1. Solver Path [%s]" % solver_path
             log_file = self.get_log_fname(
                 model_dir, learning_rate, self.hp.NUM_ITER_TO_TRY_LR)
             # Check log file for existence.
             acc = None
             if os.path.exists(log_file):
                 acc_dict = get_test_accuracies_dict(log_file)
+                print "1. log file exist. acc_dict : %d" % acc_dict
                 # Check if we got the test accuracy for one epoch.
                 if self.hp.NUM_ITER_TO_TRY_LR in acc_dict:
                     acc = acc_dict[self.hp.NUM_ITER_TO_TRY_LR]
+                    print "1. test accuracy for one epoch. acc_dict : %f" % acc
+
             if not acc:
                 acc, acc_dict = run_caffe_return_accuracy(solver_path, log_file, self.hp.CAFFE_ROOT, gpu_to_use=gpu_to_use)
 
@@ -54,7 +86,7 @@ class ModelExec:
                 raise Exception("Model training interrupted during first epoch. Crashing!")
             snapshot_file = self.get_snapshot_epoch_fname(model_dir, self.hp.NUM_ITER_TO_TRY_LR)
 
-            print "Got accuracy [%f]" % acc
+            print "Got accuracy [%f], acc_threshold [%f]" % (acc, self.hp.ACC_THRESHOLD)
             if acc > self.hp.ACC_THRESHOLD:
                 model_dir, solver_path = ModelGen(self.model_dir, self.hp, self.ssp).save_models(model_descr,
                                                                                        learning_rate,
@@ -72,6 +104,7 @@ class ModelExec:
                                     'accuracy': acc,
                                     'learning_rate': learning_rate,
                                     'status': 'OLD_MODEL',
+                                    'latency': average_inference_time,
                                     'test_accs': test_acc_dict}
                         print "Will resume from [%d] using [%s]" % (last_iter, snapshot_file)
 
@@ -80,6 +113,7 @@ class ModelExec:
                 if self.hp.MAX_STEPS in test_acc_dict:
                     return {'learning_rate': learning_rate,
                             'status': 'SUCCESS',
+                            'latency': average_inference_time,
                             'test_accs': test_acc_dict}
                 else:
                     if check_out_of_memory(log_file):
@@ -90,6 +124,7 @@ class ModelExec:
 
         return {'learning_rate': learning_rate,
                 'status': 'FAIL',
+                'latency': 0.0,
                 'test_accs': {}}
 
         # Returns log file name for given model dir when polling for various

@@ -17,12 +17,21 @@ def construct_new_net_message(hostname, net_string, epsilon, iteration_number):
                        'epsilon': epsilon,
                        'iteration_number': iteration_number})
 
+def construct_inference_time_constrain_message(hostname, net_string, latency, epsilon, iteration_number):
+    return json.dumps({'sender': hostname,
+                       'type': 'inference_time_constrain',
+                       'net_string': net_string,
+                       'latency': latency,
+                       'epsilon': epsilon,
+                       'iteration_number': iteration_number})
+
 def construct_net_trained_message(hostname,
                                   net_string,
                                   acc_best_val,
                                   iter_best_val,
                                   acc_last_val,
                                   iter_last_val,
+                                  latency,
                                   epsilon,
                                   iteration_number):
     return json.dumps({'sender': hostname,
@@ -32,6 +41,7 @@ def construct_net_trained_message(hostname,
                        'iter_best_val': iter_best_val,
                        'acc_last_val': acc_last_val,
                        'iter_last_val': iter_last_val,
+                       'latency': latency,
                        'epsilon': epsilon,
                        'iteration_number': iteration_number})
 
